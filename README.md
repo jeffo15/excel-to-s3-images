@@ -37,3 +37,14 @@ Install Python dependencies:
 python -m pip install --upgrade pip
 python -m pip install pandas openpyxl boto3 requests
 
+---
+
+## Test
+
+```bash
+python migrar_imagenes_publicas.py \
+  --excel reporte_telefonica.xlsx \
+  --dst-bucket mi-bucket-destino \
+  --dst-prefix imagenes
+
+---
