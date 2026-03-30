@@ -61,14 +61,34 @@ def extract_bucket_and_key_from_public_s3_url(url: str):
     return None, None
 
 
-def build_destination_key(original_key: str, keep_from: str, dst_prefix: str):
+def build_destination_key(
+    original_key: str,
+    keep_from: str,
+    keep_after: str,
+    dst_prefix: str,
+    item_id: str,
+    force_base_path: str,
+):
     """
-    Mantiene el path desde keep_from hacia la derecha (ej: marketfit/...).
+    Si force_base_path viene informado, arma el destino como:
+      <force_base_path>/<item_id>/<filename>
+
+    Si no, mantiene el path desde keep_from hacia la derecha (ej: marketfit/...),
+    o desde DESPUES de keep_after (ej: si keep_after="cnt", toma lo que sigue a "cnt/").
     Si dst_prefix no está vacío, lo antepone.
     """
     original_key = original_key.lstrip("/")
+    filename = original_key.split("/")[-1]
 
-    if keep_from:
+    if force_base_path:
+        base = force_base_path.strip("/")
+        return f"{base}/{item_id}/{filename}"
+
+    if keep_after:
+        needle_after = keep_after.strip("/") + "/"
+        idx = original_key.find(needle_after)
+        kept = original_key[idx + len(needle_after) :] if idx >= 0 else original_key
+    elif keep_from:
         needle = keep_from.strip("/") + "/"
         idx = original_key.find(needle)
         kept = original_key[idx:] if idx >= 0 else original_key
@@ -202,7 +222,22 @@ def main():
     parser.add_argument("--dst-bucket", required=True, help="Bucket destino")
     parser.add_argument("--dst-prefix", default="", help="Prefijo destino (default: vacío)")
     parser.add_argument("--id-col", default="Id", help='Columna ID (default: "Id")')
+    parser.add_argument(
+        "--image-col",
+        default="",
+        help='Procesar solo esta columna de imagen (ej: "Imagen Antes"). Si va vacío, procesa todas las que empiezan por "Imagen".',
+    )
     parser.add_argument("--keep-from", default="marketfit", help='Mantener path desde (default: "marketfit")')
+    parser.add_argument(
+        "--keep-after",
+        default="",
+        help='Mantener el path DESPUES de este segmento (ej: "cnt"). Tiene prioridad sobre --keep-from.',
+    )
+    parser.add_argument(
+        "--force-base-path",
+        default="/survey/cnt/679a1a40-03ac-44c3-9c5f-5cdbc783d274",
+        help='Fuerza destino como "<base>/<Id>/<archivo>" (ej: "/survey/cnt/679..."). Tiene prioridad sobre --keep-after y --keep-from.',
+    )
     parser.add_argument("--region", default=None, help="Región AWS (opcional)")
     parser.add_argument("--workers", type=int, default=16, help="Hilos en paralelo (default: 16)")
     parser.add_argument("--max", type=int, default=0, help="Limitar a N imágenes (0 = todas)")
@@ -245,9 +280,17 @@ def main():
     if args.id_col not in df.columns:
         raise SystemExit(f'No existe la columna "{args.id_col}". Columnas: {list(df.columns)}')
 
-    image_columns = [c for c in df.columns if str(c).strip().lower().startswith("imagen")]
-    if not image_columns:
-        raise SystemExit("No se encontraron columnas que empiecen con 'Imagen'.")
+    requested_image_col = args.image_col.strip()
+    if requested_image_col:
+        if requested_image_col not in df.columns:
+            raise SystemExit(
+                f'No existe la columna de imagen "{requested_image_col}". Columnas: {list(df.columns)}'
+            )
+        image_columns = [requested_image_col]
+    else:
+        image_columns = [c for c in df.columns if str(c).strip().lower().startswith("imagen")]
+        if not image_columns:
+            raise SystemExit("No se encontraron columnas que empiecen con 'Imagen'.")
 
     print("Columnas imagen:", image_columns)
     print("Workers:", args.workers)
@@ -297,7 +340,14 @@ def main():
                 )
                 continue
 
-            dst_key = build_destination_key(src_key, args.keep_from, args.dst_prefix)
+            dst_key = build_destination_key(
+                src_key,
+                args.keep_from,
+                args.keep_after,
+                args.dst_prefix,
+                item_id,
+                args.force_base_path,
+            )
 
             fut = ex.submit(
                 upload_one_stream_to_s3,
@@ -326,8 +376,12 @@ def main():
 
             if success:
                 ok_count += 1
-                if meta.get("skipped"):
+                was_skipped = bool(meta.get("skipped"))
+                if was_skipped:
                     skipped_count += 1
+
+                full_s3_path = f"s3://{args.dst_bucket}/{dst_key}"
+                full_http_url = f"https://{args.dst_bucket}.s3.amazonaws.com/{dst_key}"
 
                 ok_rows.append(
                     {
@@ -337,7 +391,12 @@ def main():
                         "url": url,
                         "dst_bucket": args.dst_bucket,
                         "dst_key": dst_key,
-                        "skipped": bool(meta.get("skipped", False)),
+                        "dst_s3_path": full_s3_path,
+                        "dst_http_url": full_http_url,
+                        # Paths que realmente se agregaron en esta corrida.
+                        "added_s3_path": "" if was_skipped else full_s3_path,
+                        "added_http_url": "" if was_skipped else full_http_url,
+                        "skipped": was_skipped,
                         "content_type": meta.get("content_type", ""),
                         "content_disposition": meta.get("content_disposition", ""),
                         "cache_control": meta.get("cache_control", ""),
