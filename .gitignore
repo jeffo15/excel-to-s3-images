@@ -2,3 +2,13 @@
 base_movistar.xlsx
 reporte_telefonica.xlsx
 .env
+
+# Logs generados por los scripts
+ok.csv
+errors.csv
+delete_ok.csv
+delete_errors.csv
+plantilla_migracion_imagenes.xlsx
+
+__pycache__/
+*.pyc

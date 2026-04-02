@@ -14,9 +14,9 @@
 # Requisitos:
 #   py -m pip install pandas openpyxl boto3 requests
 #
-# Ejemplo:
-#   py migrar_imagenes_publicas_parallel_v2.py --excel telefonica.xlsx --dst-bucket logicsoft-centauro-bucket --keep-from marketfit --workers 16
-#   py migrar_imagenes_publicas_parallel_v2.py --excel telefonica.xlsx --dst-bucket logicsoft-centauro-bucket --keep-from marketfit --workers 16 --max 5000
+# Ejemplo (desde la raíz del repositorio):
+#   py s3/migracion/migrar_imagenes_publicas.py --excel telefonica.xlsx --dst-bucket logicsoft-centauro-bucket --keep-from marketfit --workers 16
+#   py s3/migracion/migrar_imagenes_publicas.py --excel telefonica.xlsx --dst-bucket logicsoft-centauro-bucket --keep-from marketfit --workers 16 --max 5000
 #
 # Nota:
 #   - Si tu destino tiene versioning o quieres evitar re-subir si ya existe igual, usa --skip-if-exists
